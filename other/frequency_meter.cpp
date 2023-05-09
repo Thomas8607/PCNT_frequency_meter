@@ -7,7 +7,7 @@
 #include "esp_attr.h"
 #include "esp_log.h"
 #include "soc/gpio_sig_map.h" 
-                             
+#include "soc/pcnt_struct.h"                             
 
 #define PCNT_H_LIM_VAL        overflow                                  
 #define FREQ_PIN              35
@@ -90,8 +90,7 @@ void loop() {
     pcnt_counter_resume(PCNT_UNIT_0); 
     overflow_cnt = 0;    
   
-    Serial.print(frequency/2);
-    Serial.println("Hz");
+    Serial.println("Frekvencia: " + String(frequency/2) + "Hz");
 
     pcnt_counter_clear(PCNT_UNIT_0);
     esp_timer_start_once(timer_handle, 1000000);                    // Initialize High resolution timer (1 sec)
