@@ -144,7 +144,7 @@ int countRPM(long firstTime, long lastTime, int pulseTotal, int pulsePerRev) {
   }
   //return ((60000 * (pulseTotal/pulsePerRev)) / timeDelta);          // Fordulat/perc
   Serial.println("timeDelta: " + String(timeDelta));                  // 20658usec
-  return ((1000000 * (pulseTotal/pulsePerRev)) / timeDelta);          // Frekvencia
+  return ((1000000 * (pulseTotal/pulsePerRev)) / timeDelta);          // Frekvencia 968Hz
 }
 void setup() {
   Serial.begin(115200);
