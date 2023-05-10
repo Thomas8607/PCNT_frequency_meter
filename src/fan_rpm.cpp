@@ -59,12 +59,12 @@ void pcnt_init(int16_t PCNT_INPUT_SIG_IO) {
 }
 
 // Count RPM Function
-int countRPM(uint32_t firstTime, uint32_t lastTime, uint16_t pulsePerRev) {
+int countRPM(uint32_t firstTime, uint32_t lastTime, uint16_t pulseTotal, uint16_t pulsePerRev) {
     uint32_t timeDelta = (lastTime - firstTime);                                // lastTime - firstTime
-    if (timeDelta <= 0) {
+    if (timeDelta == 0) {
        return 0;
     }
-    return ((1000000 * (20/pulsePerRev)) / timeDelta);                          // Frekvencia
+    return ((1000000 * (pulseTotal/pulsePerRev)) / timeDelta);                          // Frequency
 }
 // Rpm calculation Task
 void RpmCalculationTask(void *arg) {
@@ -79,15 +79,19 @@ void RpmCalculationTask(void *arg) {
             if (lastStamp == 0) {
                 lastStamp = evt.timeStamp;
             }
-            RPM = countRPM(lastStamp, evt.timeStamp, PulseperRev);
+            RPM = countRPM(lastStamp, evt.timeStamp, 20, PulseperRev);
             lastStamp = evt.timeStamp;
         }
         else {
             RPM = 0;
         }
     }
+    if(user_isr_handle) {
+        //Free the ISR service handle.
+        esp_intr_free(user_isr_handle);
+        user_isr_handle = NULL;
+    }
 }
-
 
 
 void setup() {
@@ -97,7 +101,7 @@ void setup() {
 
 void loop() {
     PulseperRev = 2;
-    Serial.println("Frekvencia: " + String(RPM));
+    Serial.println("Frequency: " + String(RPM));
 }
 
 
