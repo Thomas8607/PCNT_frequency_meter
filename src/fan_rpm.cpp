@@ -10,20 +10,17 @@
 #define SIGNAL_INPUT GPIO_NUM_4
 
 TaskHandle_t RpmCalculationHandle = NULL;
-xQueueHandle pcnt_evt_queue;   // A queue to handle pulse counter events
-pcnt_isr_handle_t user_isr_handle = NULL; //user's ISR service handle
+xQueueHandle pcnt_evt_queue;                        // A queue to handle pulse counter events
+pcnt_isr_handle_t user_isr_handle = NULL;           // user's ISR service handle
 int16_t RPM;
+int16_t PulseperRev;
 typedef struct {
-    uint32_t timeStamp; // The time the event occured
+    uint32_t timeStamp;                             // The time the event occured
 } pcnt_evt_t;
 
-
-/* Decode what PCNT's unit originated an interrupt
- * and pass this information together with the event type
- * and timestamp to the main program using a queue.
- */
+// PCNT interrupt
 static void IRAM_ATTR pcnt_intr_handler(void *arg) {
-    uint32_t currentMicros = micros(); //Time at instant ISR was called
+    uint32_t currentMicros = micros();                      //Time at instant ISR was called
     uint32_t intr_status = PCNT.int_st.val;
     pcnt_evt_t evt;
     portBASE_TYPE HPTaskAwoken = pdFALSE;
@@ -37,28 +34,24 @@ static void IRAM_ATTR pcnt_intr_handler(void *arg) {
     }
 }
 
-/* Initialize PCNT functions for one channel:
- *  - configure and initialize PCNT with pos-edge counting 
- *  - set up the input filter
- *  - set up the counter events to watch
-*/
-void pcnt_init_channel(int PCNT_INPUT_SIG_IO) {
-    /* Prepare configuration for the PCNT unit */
+// Initialize PCNT functions for one channel
+void pcnt_init(int16_t PCNT_INPUT_SIG_IO) {
     pcnt_config_t pcnt_config; 
-        // Set PCNT input signal and control GPIOs
-        pcnt_config.pulse_gpio_num = PCNT_INPUT_SIG_IO;
-        pcnt_config.ctrl_gpio_num = -1;
-        pcnt_config.channel = PCNT_CHANNEL_0;
-        pcnt_config.unit = PCNT_UNIT_0;
-        // What to do on the positive / negative edge of pulse input?
-        pcnt_config.pos_mode = PCNT_COUNT_INC;   // Count up on the positive edge
-        pcnt_config.neg_mode = PCNT_COUNT_DIS;   // Keep the counter value on the negative edge
-        // What to do when control input is low or high?
-        pcnt_config.lctrl_mode = PCNT_MODE_REVERSE; // Reverse counting direction if low
-        pcnt_config.hctrl_mode = PCNT_MODE_KEEP;    // Keep the primary counter mode if high
-        // Set the maximum and minimum limit values to watch
-        pcnt_config.counter_h_lim = 19;
-        pcnt_config.counter_l_lim = -20;
+    // Set PCNT input signal and control GPIOs
+    pcnt_config.pulse_gpio_num = PCNT_INPUT_SIG_IO;
+    pcnt_config.ctrl_gpio_num = -1;
+    pcnt_config.channel = PCNT_CHANNEL_0;
+    pcnt_config.unit = PCNT_UNIT_0;
+    // What to do on the positive / negative edge of pulse input?
+    pcnt_config.pos_mode = PCNT_COUNT_INC;   // Count up on the positive edge
+    pcnt_config.neg_mode = PCNT_COUNT_DIS;   // Keep the counter value on the negative edge
+    // What to do when control input is low or high?
+    pcnt_config.lctrl_mode = PCNT_MODE_REVERSE; // Reverse counting direction if low
+    pcnt_config.hctrl_mode = PCNT_MODE_KEEP;    // Keep the primary counter mode if high
+    // Set the maximum and minimum limit values to watch
+    pcnt_config.counter_h_lim = 19;
+    pcnt_config.counter_l_lim = -20;
+
     /* Initialize PCNT unit */
     pcnt_unit_config(&pcnt_config);
     /* Configure and enable the input filter */
@@ -77,33 +70,29 @@ void pcnt_init_channel(int PCNT_INPUT_SIG_IO) {
     pcnt_counter_resume(PCNT_UNIT_0);
 }
 
-/* Count RPM Function - takes first timestamp and last timestamp,
-number of pulses, and pulses per revolution */
-int countRPM(uint32_t firstTime, uint32_t lastTime, uint16_t pulseTotal, uint16_t pulsePerRev) {
-    uint32_t timeDelta = (lastTime - firstTime);                        // lastTime - firstTime
+// Count RPM Function
+int countRPM(uint32_t firstTime, uint32_t lastTime, uint16_t pulsePerRev) {
+    uint32_t timeDelta = (lastTime - firstTime);                                // lastTime - firstTime
     if (timeDelta <= 0) {
-        return 0;
+       return 0;
     }
-    return ((1000000 * (pulseTotal/pulsePerRev)) / timeDelta);          // Frekvencia
+    return ((1000000 * (20/pulsePerRev)) / timeDelta);                          // Frekvencia
 }
-
+// Rpm calculation Task
 void RpmCalculationTask(void *arg) {
-    /* Initialize PCNT event queue and PCNT functions */
+    // Initialize PCNT event queue and PCNT functions
     pcnt_evt_queue = xQueueCreate(10, sizeof(pcnt_evt_t));
-    pcnt_init_channel(SIGNAL_INPUT); // Initialize Unit 0 to pin 4
-    uint32_t lastStamp = 0; // for previous timestamp
+    pcnt_init(SIGNAL_INPUT);                                                    // Initialize PCNT
+    uint32_t lastStamp = 0;                                                     // for previous timestamp
     pcnt_evt_t evt;
     portBASE_TYPE res;
     for(;;){
-        /* Wait for the event information passed from PCNT's interrupt handler.
-        * Once received, decode the event type and print it on the serial monitor.
-        */
         res = xQueueReceive(pcnt_evt_queue, &evt, 1000 / portTICK_PERIOD_MS);
         if (res == pdTRUE) {
             if (lastStamp == 0) {
                 lastStamp = evt.timeStamp;
             }
-            RPM = countRPM(lastStamp, evt.timeStamp, 20, 1);                                    // Miért úgy jó a frekvencia ha 20 van megadva? countRPM függvényben a pulseTotal ez
+            RPM = countRPM(lastStamp, evt.timeStamp, PulseperRev);
             lastStamp = evt.timeStamp;
         }
         else {
@@ -118,6 +107,7 @@ void setup() {
 }
 
 void loop() {
+    PulseperRev = 2;
     Serial.println("Frekvencia: " + String(RPM));
 }
 
