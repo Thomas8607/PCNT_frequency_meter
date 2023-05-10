@@ -9,12 +9,14 @@
 
 #define SIGNAL_INPUT GPIO_NUM_4
 
+TaskHandle_t RpmCalculationHandle = NULL;
 xQueueHandle pcnt_evt_queue;   // A queue to handle pulse counter events
 pcnt_isr_handle_t user_isr_handle = NULL; //user's ISR service handle
-
+int16_t RPM;
 typedef struct {
     uint32_t timeStamp; // The time the event occured
 } pcnt_evt_t;
+
 
 /* Decode what PCNT's unit originated an interrupt
  * and pass this information together with the event type
@@ -34,6 +36,7 @@ static void IRAM_ATTR pcnt_intr_handler(void *arg) {
         }
     }
 }
+
 /* Initialize PCNT functions for one channel:
  *  - configure and initialize PCNT with pos-edge counting 
  *  - set up the input filter
@@ -78,23 +81,17 @@ void pcnt_init_channel(int PCNT_INPUT_SIG_IO) {
 number of pulses, and pulses per revolution */
 int countRPM(uint32_t firstTime, uint32_t lastTime, uint16_t pulseTotal, uint16_t pulsePerRev) {
     uint32_t timeDelta = (lastTime - firstTime);                        // lastTime - firstTime
-    if (timeDelta <= 0){                                                // This means we've gotten something wrong
-        return -1;
+    if (timeDelta <= 0) {
+        return 0;
     }
-    //return ((60000 * (pulseTotal/pulsePerRev)) / timeDelta);          // Fordulat/perc
-    Serial.println("timeDelta: " + String(timeDelta));                  // 20658usec
-    return ((1000000 * (pulseTotal/pulsePerRev)) / timeDelta);          // Frekvencia 968Hz
-}
-void setup() {
-    Serial.begin(115200);
+    return ((1000000 * (pulseTotal/pulsePerRev)) / timeDelta);          // Frekvencia
 }
 
-void loop() {
+void RpmCalculationTask(void *arg) {
     /* Initialize PCNT event queue and PCNT functions */
     pcnt_evt_queue = xQueueCreate(10, sizeof(pcnt_evt_t));
     pcnt_init_channel(SIGNAL_INPUT); // Initialize Unit 0 to pin 4
-    int16_t RPM = -1; // Fan 0 RPM
-    uint32_t lastStamp = 0; //for previous time stamp for fan 0
+    uint32_t lastStamp = 0; // for previous timestamp
     pcnt_evt_t evt;
     portBASE_TYPE res;
     for(;;){
@@ -106,21 +103,24 @@ void loop() {
             if (lastStamp == 0) {
                 lastStamp = evt.timeStamp;
             }
-            RPM = countRPM(lastStamp, evt.timeStamp, 20, 1);
-            if (RPM == -1) {
-                Serial.println("RPM Calc error detected!");
-                continue;
-            }
+            RPM = countRPM(lastStamp, evt.timeStamp, 20, 1);                                    // Miért úgy jó a frekvencia ha 20 van megadva? countRPM függvényben a pulseTotal ez
             lastStamp = evt.timeStamp;
         }
         else {
             RPM = 0;
         }
-        Serial.println("Frekvencia: " + String(RPM));
-    }
-    if(user_isr_handle) {
-        //Free the ISR service handle.
-        esp_intr_free(user_isr_handle);
-        user_isr_handle = NULL;
     }
 }
+
+void setup() {
+    Serial.begin(115200);
+    xTaskCreate(RpmCalculationTask, "RpmCalculationTask", 4096, NULL, 10, &RpmCalculationHandle);
+}
+
+void loop() {
+    Serial.println("Frekvencia: " + String(RPM));
+}
+
+
+
+
