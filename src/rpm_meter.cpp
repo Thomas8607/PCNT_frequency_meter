@@ -6,19 +6,19 @@
 #include "driver/pcnt.h"
 #include "soc/pcnt_struct.h"
 
-#define SIGNAL_INPUT GPIO_NUM_4
+#define SIGNAL_INPUT GPIO_NUM_4                        // Pulse counter input
 
 TaskHandle_t RpmCalculationHandle = NULL;
-xQueueHandle pcnt_evt_queue;                        // A queue to handle pulse counter events
-pcnt_isr_handle_t user_isr_handle = NULL;           // user's ISR service handle
+xQueueHandle pcnt_evt_queue;                           // A queue to handle pulse counter events
+pcnt_isr_handle_t user_isr_handle = NULL;              // user's ISR service handle
 int16_t PulseperRev, PulseTotal, RPM;
 typedef struct {
-    uint32_t timeStamp;                             // The time the event occured
+    uint32_t timeStamp;                                // The time the event occured
 } pcnt_evt_t;
 
 // PCNT interrupt
 static void IRAM_ATTR pcnt_intr_handler(void *arg) {
-    uint32_t currentMicros = micros();                      //Time at instant ISR was called
+    uint32_t currentMicros = micros();                 // Time at instant ISR was called
     uint32_t intr_status = PCNT.int_st.val;
     pcnt_evt_t evt;
     portBASE_TYPE HPTaskAwoken = pdFALSE;
@@ -60,17 +60,18 @@ void pcnt_init(int16_t PCNT_INPUT_SIG_IO, int16_t PCNT_counter_h_limit) {
 
 // Count RPM Function
 int16_t countRPM(uint32_t firstTime, uint32_t lastTime, uint16_t pulsePerRev, int16_t pulseTotal) {
-    uint32_t timeDelta = (lastTime - firstTime);                                // lastTime - firstTime
+    uint32_t timeDelta = (lastTime - firstTime);
     if (timeDelta == 0) {
        return 0;
     }
-    return ((1000000 * ((float)pulseTotal/(float)pulsePerRev)) / timeDelta);                          // Frequency
+    return ((1000000 * ((float)pulseTotal/(float)pulsePerRev)) / timeDelta);            // Frequency
+    // return ((60 * 1000000 * ((float)pulseTotal/(float)pulsePerRev)) / timeDelta);    // Rpm
 }
 // Rpm calculation Task
 void RpmCalculationTask(void *arg) {
     pcnt_evt_queue = xQueueCreate(10, sizeof(pcnt_evt_t));
-    pcnt_init(SIGNAL_INPUT, PulseTotal);                                                    // Initialize PCNT
-    uint32_t lastStamp = 0;                                                     // for previous timestamp
+    pcnt_init(SIGNAL_INPUT, PulseTotal);   // Initialize PCNT
+    uint32_t lastStamp = 0;                // for previous timestamp
     pcnt_evt_t evt;
     portBASE_TYPE res;
     while(1) {
@@ -86,7 +87,8 @@ void RpmCalculationTask(void *arg) {
             RPM = 0;
         }
     }
-    if(user_isr_handle) {        // Free the ISR service handle
+    // Free the ISR service handle
+    if(user_isr_handle) {                                                      
         esp_intr_free(user_isr_handle);
         user_isr_handle = NULL;
     }
@@ -102,6 +104,7 @@ void loop() {
     PulseperRev = 1;
     PulseTotal = 10;
     Serial.println("Frequency: " + String(RPM));
+    //Serial.println("Rpm: " + String(RPM));
 }
 
 
