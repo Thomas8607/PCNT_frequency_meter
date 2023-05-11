@@ -11,8 +11,7 @@
 TaskHandle_t RpmCalculationHandle = NULL;
 xQueueHandle pcnt_evt_queue;                        // A queue to handle pulse counter events
 pcnt_isr_handle_t user_isr_handle = NULL;           // user's ISR service handle
-int16_t RPM;
-int16_t PulseperRev;
+int16_t PulseperRev, PulseTotal, RPM;
 typedef struct {
     uint32_t timeStamp;                             // The time the event occured
 } pcnt_evt_t;
@@ -34,18 +33,19 @@ static void IRAM_ATTR pcnt_intr_handler(void *arg) {
 }
 
 // Initialize PCNT functions for one channel
-void pcnt_init(int16_t PCNT_INPUT_SIG_IO) {
+void pcnt_init(int16_t PCNT_INPUT_SIG_IO, int16_t PCNT_counter_h_limit) {
     pcnt_config_t pcnt_config; 
-    pcnt_config.pulse_gpio_num = PCNT_INPUT_SIG_IO;
-    pcnt_config.ctrl_gpio_num = -1;
-    pcnt_config.channel = PCNT_CHANNEL_0;
-    pcnt_config.unit = PCNT_UNIT_0;
-    pcnt_config.pos_mode = PCNT_COUNT_INC;
-    pcnt_config.neg_mode = PCNT_COUNT_DIS;
-    pcnt_config.lctrl_mode = PCNT_MODE_REVERSE;
-    pcnt_config.hctrl_mode = PCNT_MODE_KEEP;
-    pcnt_config.counter_h_lim = 19;
-    pcnt_config.counter_l_lim = -20;
+        pcnt_config.pulse_gpio_num = PCNT_INPUT_SIG_IO;
+        pcnt_config.ctrl_gpio_num = -1;
+        pcnt_config.channel = PCNT_CHANNEL_0;
+        pcnt_config.unit = PCNT_UNIT_0;
+        pcnt_config.pos_mode = PCNT_COUNT_DIS;
+        pcnt_config.neg_mode = PCNT_COUNT_INC;
+        pcnt_config.lctrl_mode = PCNT_MODE_REVERSE;
+        pcnt_config.hctrl_mode = PCNT_MODE_KEEP;
+        pcnt_config.counter_h_lim = 19;
+        pcnt_config.counter_l_lim = -1 * PCNT_counter_h_limit;
+
     pcnt_unit_config(&pcnt_config);
     pcnt_set_filter_value(PCNT_UNIT_0, 100);
     pcnt_filter_enable(PCNT_UNIT_0);
@@ -59,17 +59,17 @@ void pcnt_init(int16_t PCNT_INPUT_SIG_IO) {
 }
 
 // Count RPM Function
-int countRPM(uint32_t firstTime, uint32_t lastTime, uint16_t pulseTotal, uint16_t pulsePerRev) {
+int16_t countRPM(uint32_t firstTime, uint32_t lastTime, uint16_t pulsePerRev, int16_t pulseTotal) {
     uint32_t timeDelta = (lastTime - firstTime);                                // lastTime - firstTime
     if (timeDelta == 0) {
        return 0;
     }
-    return ((1000000 * (pulseTotal/pulsePerRev)) / timeDelta);                          // Frequency
+    return ((1000000 * ((float)pulseTotal/(float)pulsePerRev)) / timeDelta);                          // Frequency
 }
 // Rpm calculation Task
 void RpmCalculationTask(void *arg) {
     pcnt_evt_queue = xQueueCreate(10, sizeof(pcnt_evt_t));
-    pcnt_init(SIGNAL_INPUT);                                                    // Initialize PCNT
+    pcnt_init(SIGNAL_INPUT, PulseTotal);                                                    // Initialize PCNT
     uint32_t lastStamp = 0;                                                     // for previous timestamp
     pcnt_evt_t evt;
     portBASE_TYPE res;
@@ -79,15 +79,14 @@ void RpmCalculationTask(void *arg) {
             if (lastStamp == 0) {
                 lastStamp = evt.timeStamp;
             }
-            RPM = countRPM(lastStamp, evt.timeStamp, 20, PulseperRev);
+            RPM = countRPM(lastStamp, evt.timeStamp, PulseperRev, PulseTotal);
             lastStamp = evt.timeStamp;
         }
         else {
             RPM = 0;
         }
     }
-    if(user_isr_handle) {
-        //Free the ISR service handle.
+    if(user_isr_handle) {        // Free the ISR service handle
         esp_intr_free(user_isr_handle);
         user_isr_handle = NULL;
     }
@@ -100,7 +99,8 @@ void setup() {
 }
 
 void loop() {
-    PulseperRev = 2;
+    PulseperRev = 1;
+    PulseTotal = 10;
     Serial.println("Frequency: " + String(RPM));
 }
 
